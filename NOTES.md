@@ -94,16 +94,75 @@ CONSEQUENCE FOR THE BRIDGE (document in README, not hidden):
   (in-memory). Bridge: single persistent connection, keepalive every ~60 s,
   reconnect with exponential backoff (cap 60 s) after drops.
 
+## Phase 3 — build the bridge (done)
+
+- Transport: SSH ServerQuery on 10022 via `asyncssh` (see Phase 2).
+  `ssh.create_process(None, stdin=PIPE, stdout=PIPE)`, no PTY; banner
+  (2 lines) drained at connect.
+- `ts_client.py`: single persistent connection. Setup sequence:
+  `use sid=1` → `whoami` (own clid — its own enter/leave are never forwarded)
+  → `clientupdate client_nickname=<BRIDGE_NICKNAME>` → optional
+  `channellist` + `clientmove` to `TS_BRIDGE_CHANNEL` (name match)
+  → seed clid→(nickname, uid) cache from `clientlist -uid` (multi-record
+  `|` lines) → `servernotifyregister` ×4 (server, textserver, textchannel,
+  textprivate). Reader task routes `notify*` lines to the event queue,
+  everything else to the response queue; `command()` holds a lock and
+  raises `TSQueryError` on nonzero error id, `TSQueryClosed` on EOF.
+  Keepalive = `version` every 60 s (no `ping` command in TS6).
+- `parser.py`: pure functions only. TS escapes (`\s \p \n \/ \\\ ...`),
+  `|` record splitting, kv parsing, `error id=N` parsing, and the three
+  event parsers (`ClientJoined`, `ClientLeft`, `TextMessage` dataclasses).
+- `formatter.py`: pure → webhook payload. All safety in one place:
+  `safe_text()` neutralizes @everyone/@here/role-IDs with ZWSP, escapes
+  markdown, truncates. Discord limits: content 2000, description 4096,
+  title/field-name 256, field value 1024, 25 fields, 6000-char total
+  embed budget (description trimmed to fit the budget).
+- `discord.py`: worker on the event queue; 429 → honor `Retry-After`
+  header (seconds) or JSON `retry_after` (ms); 5xx/ClientError → retry
+  with backoff 2 s doubling, cap 60 s; other non-2xx → log (no URL) +
+  drop; malformed events → log + skip, never crash.
+- `main.py`: wiring + SIGTERM/SIGINT via `loop.add_signal_handler`;
+  reconnect loop wraps `client.run()`, backoff 1 s → 60 s cap.
+- `config.py`: env-driven; `load_dotenv(".env", override=False)` with
+  explicit path (no directory walk) so test isolation and container env
+  both work. Fields per plan: TS_HOST, TS_SSH_PORT (10022),
+  TS_QUERY_USER/PASSWORD, TS_QUERY_API_KEY (aux), DISCORD_WEBHOOK_URL,
+  BRIDGE_NICKNAME (TS6-Discord-Bridge), TS_BRIDGE_CHANNEL,
+  FORWARD_PRIVATE_MESSAGES (false), IGNORE_CLIENT_UIDS, LOG_LEVEL.
+- Entry point: console script `tsdiscord` (`tsdiscord.main:main`).
+
+## Phase 4 — testing (done)
+
+- 56 tests, all green (`pytest -q`), ~3 s.
+- `test_parser.py`: real captured payloads + escapes/`|`/kv/error parsing.
+- `test_formatter.py`: payload shape, mention neutralization (ZWSP),
+  markdown escaping, every Discord limit incl. 1024 field value and the
+  6000-char embed budget, `allowed_mentions` always empty.
+- `test_config.py`: monkeypatch.chdir(tmp_path) + delenv of every TS var
+  so the repo's .env cannot leak; missing/invalid values raise ConfigError.
+- `test_discord.py`: local aiohttp mock webhook — 204, 429 via header and
+  via JSON body, 5xx-then-204 (retried), 404 dropped, run() drains queue,
+  run() survives unformattable events, URL never appears in logs.
+- `test_ts_client.py`: end-to-end against an in-process fake TS6 query
+  server speaking the verified protocol over REAL SSH (asyncssh 2.24.1
+  server API: `create_server` + `SSHServer` subclass, `session_requested`
+  returns a `handle(stdin, stdout, stderr)` callable). Asserts setup
+  sequence, event stream, own-client filtering (clid from `whoami`),
+  leave-event enrichment from the clid cache, wrong-password refusal.
+- Known test gotcha: `stdout.write()` in the fake server must receive ONE
+  concatenated string, not a tuple (a tuple silently kills the session).
+
 ## Open questions
 
-- (Phase 1) widen `query_ip_allowlist` for the bridge container's subnet.
-- (Phase 3) decide bridge container TS_HOST: `ts6` (service name) + SSH port 10022.
+- (Phase 5) widen `query_ip_allowlist` (TSSERVER_QUERY_IP_ALLOWLIST) to
+  the ts6-net subnet before running the bridge as a container.
 
 ## Phase status
 
 - [x] Phase 0: Recon + skeleton
 - [x] Phase 1: TS6 server in Docker
 - [x] Phase 2: Learn query API empirically
-- [ ] Phase 3: Build the bridge
-- [ ] Phase 4: Testing
-- [ ] Phase 5: Packaging and docs
+- [x] Phase 3: Build the bridge
+- [x] Phase 4: Testing
+- [ ] Phase 5: Integration test vs live server
+- [ ] Phase 6: Packaging and docs
