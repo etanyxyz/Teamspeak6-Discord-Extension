@@ -1,0 +1,27 @@
+[project]
+name = "tsdiscord"
+version = "0.1.0"
+description = "TeamSpeak 6 -> Discord bridge: posts connect/disconnect events and text messages to a Discord channel via webhook"
+requires-python = ">=3.12"
+dependencies = [
+    "aiohttp>=3.9",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["tsdiscord"]
+package-dir = { "tsdiscord" = "src/tsdiscord" }
