@@ -1,6 +1,10 @@
 # Production: TeamSpeak 6 server + Discord bridge.
 #
-#   docker compose up -d --build
+#   docker compose up -d
+#
+# The bridge image (ghcr.io/etanyxyz/ts6-discord-bridge) is pulled from
+# GitHub Container Registry; the Dockerfile in this repo is what it is
+# built from (see README, "Building and publishing the image").
 #
 # The bridge connects to the server's SSH ServerQuery interface (10022/tcp)
 # and posts connect/disconnect events and text messages to the Discord
@@ -32,7 +36,7 @@ services:
       - ts6-net
 
   bridge:
-    build: .
+    image: ghcr.io/etanyxyz/ts6-discord-bridge:0.1.0
     container_name: tsdiscord-bridge
     restart: unless-stopped
     depends_on:

@@ -45,12 +45,13 @@ side.
 
 ## Requirements
 
-- A TeamSpeak 6 server with SSH query enabled (`TSSERVER_QUERY_SSH_ENABLED=true`).
+- A TeamSpeak 6 server with SSH query enabled
+  (`TSSERVER_QUERY_SSH_ENABLED=true`). `docker-compose.yml` includes one;
+  if you run your own server instead, delete the `ts6` service and point
+  `TS_HOST` at it.
 - A Discord **webhook URL** for the target channel.
-- Python 3.12 (the Docker image bundles it; for a bare install see
-  [Development](#development)).
-
----
+- No local Python needed — the bridge runs from a Docker image. (For
+  development, see [Development](#development).)
 
 ## Quick start (Docker)
 
@@ -59,11 +60,13 @@ git clone git@github.com:etanyxyz/Teamspeak6-Discord-Extension.git
 cd Teamspeak6-Discord-Extension
 cp .env.example .env
 # fill in TS_QUERY_USER / TS_QUERY_PASSWORD / DISCORD_WEBHOOK_URL
-docker compose up -d --build
+docker compose up -d
 ```
 
 `docker-compose.yml` starts both the TS6 server and the bridge on a shared
 internal network; the bridge reaches the server by the service name `ts6`.
+The bridge is pulled from GitHub Container Registry
+(`ghcr.io/etanyxyz/ts6-discord-bridge:0.1.0`).
 
 ### First start
 
@@ -99,6 +102,20 @@ entries.)
 > for ~10 minutes (in-memory; `docker restart ts6` clears it). The bridge uses
 > one persistent connection with a keepalive and a capped exponential
 > backoff, so it does not trip this in normal operation.
+
+## Building and publishing the image (maintainers)
+
+The image `ghcr.io/etanyxyz/ts6-discord-bridge` is built from the
+`Dockerfile` in this repo. To publish a new version:
+
+```bash
+docker build -t ghcr.io/etanyxyz/ts6-discord-bridge:0.1.0 .
+docker login ghcr.io        # a GitHub PAT with the write:packages scope
+docker push ghcr.io/etanyxyz/ts6-discord-bridge:0.1.0
+```
+
+Then create a release on the matching git tag so users can follow the
+`0.1.0` tag in `docker-compose.yml`.
 
 ---
 

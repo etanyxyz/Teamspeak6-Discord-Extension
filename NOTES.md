@@ -198,4 +198,18 @@ CONSEQUENCE FOR THE BRIDGE (document in README, not hidden):
 - [x] Phase 3: Build the bridge
 - [x] Phase 4: Testing
 - [x] Phase 5: Integration test vs live server
-- [ ] Phase 6: Packaging and docs
+- [x] Phase 6: Packaging and docs
+- [x] Phase 7: ghcr publish prep (user pushes image + creates release)
+
+## Phase 7 — ghcr image + v0.1.0 release prep (done, user pushes)
+
+- `docker-compose.yml` bridge service now uses
+  `image: ghcr.io/etanyxyz/ts6-discord-bridge:0.1.0` (no `build:`);
+  README quickstart says `docker compose up -d` and a maintainer section
+  documents the build/login/push commands (PAT with write:packages).
+- Local containers cleaned up (`docker compose down`): ts6 + tsdiscord-bridge
+  removed, ts6-net removed. Volume `teamspeak6-discord-extension_ts6-data`
+  KEPT (server state, incl. credentials). Local built image
+  `teamspeak6-discord-extension-bridge` left in place.
+- Git tag `v0.1.0` pushed; user creates the GitHub release from it
+  (no gh CLI / no PAT on this machine — user does push + release).
