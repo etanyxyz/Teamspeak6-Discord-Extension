@@ -1,0 +1,31 @@
+# Dev server: TeamSpeak 6 in Docker with both query interfaces enabled.
+# The bridge container (docker-compose.yml) joins the same `ts6-net` network
+# and reaches the server by service name `ts6`.
+services:
+  ts6:
+    image: teamspeaksystems/teamspeak6-server:6.0.0-beta14
+    container_name: ts6
+    restart: unless-stopped
+    ports:
+      - "9987:9987/udp"    # voice
+      - "30033:30033/tcp"   # file transfer
+      - "10022:10022/tcp"   # SSH ServerQuery
+      - "10080:10080/tcp"   # HTTP WebQuery
+    environment:
+      - TSSERVER_LICENSE_ACCEPTED=accept
+      - TSSERVER_DEFAULT_PORT=9987
+      - TSSERVER_FILE_TRANSFER_PORT=30033
+      - TSSERVER_QUERY_HTTP_ENABLED=true
+      - TSSERVER_QUERY_SSH_ENABLED=true
+    volumes:
+      - ts6-data:/var/tsserver
+    networks:
+      - ts6-net
+
+volumes:
+  ts6-data:
+
+networks:
+  ts6-net:
+    name: ts6-net
+    driver: bridge
