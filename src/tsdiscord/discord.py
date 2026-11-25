@@ -96,8 +96,11 @@ class DiscordWorker:
                 log.exception("failed to format event; dropping it")
                 continue
             try:
-                await self.send_payload(payload)
+                ok = await self.send_payload(payload)
             except asyncio.CancelledError:
                 raise
             except Exception:  # noqa: BLE001
                 log.exception("unexpected webhook failure; event dropped")
+                continue
+            if ok:
+                log.info("posted %s to Discord", type(event).__name__)

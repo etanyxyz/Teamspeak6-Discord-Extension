@@ -13,7 +13,7 @@ def test_joined_payload_shape():
         clid=7, uid="user1", nickname="Alice Dev", channel_id=1, client_type=0
     )
     p = formatter.build_payload(ev, channel_name="General")
-    assert p["username"] == "TS6 \u2192 Discord Bridge"
+    assert p["username"] == "TS6 \u2192 Bridge"
     assert p["allowed_mentions"] == {"parse": []}
     emb = p["embeds"][0]
     assert emb["title"] == "User joined"

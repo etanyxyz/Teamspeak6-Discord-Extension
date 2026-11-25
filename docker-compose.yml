@@ -1,0 +1,56 @@
+# Production: TeamSpeak 6 server + Discord bridge.
+#
+#   docker compose up -d --build
+#
+# The bridge connects to the server's SSH ServerQuery interface (10022/tcp)
+# and posts connect/disconnect events and text messages to the Discord
+# webhook configured in .env (DISCORD_WEBHOOK_URL).
+#
+# NOTE: the TS6 query interface flood-locks source IPs that are not in
+# /var/tsserver/query_ip_allowlist.txt (default: loopback only). When the
+# bridge runs as a separate container, add its network's subnet to that
+# file (it persists in the ts6-data volume). See README.md.
+services:
+  ts6:
+    image: teamspeaksystems/teamspeak6-server:6.0.0-beta14
+    container_name: ts6
+    restart: unless-stopped
+    ports:
+      - "9987:9987/udp"    # voice
+      - "30033:30033/tcp"   # file transfer
+      - "10022:10022/tcp"   # SSH ServerQuery (used by the bridge)
+      - "10080:10080/tcp"   # HTTP WebQuery
+    environment:
+      - TSSERVER_LICENSE_ACCEPTED=accept
+      - TSSERVER_DEFAULT_PORT=9987
+      - TSSERVER_FILE_TRANSFER_PORT=30033
+      - TSSERVER_QUERY_HTTP_ENABLED=true
+      - TSSERVER_QUERY_SSH_ENABLED=true
+    volumes:
+      - ts6-data:/var/tsserver
+    networks:
+      - ts6-net
+
+  bridge:
+    build: .
+    container_name: tsdiscord-bridge
+    restart: unless-stopped
+    depends_on:
+      - ts6
+    env_file: .env
+    environment:
+      # Service name of the ts6 container on ts6-net. The `environment:`
+      # block wins over .env, so the container always reaches the server
+      # via its compose service name.
+      TS_HOST: ts6
+      TS_SSH_PORT: "10022"
+    networks:
+      - ts6-net
+
+volumes:
+  ts6-data:
+
+networks:
+  ts6-net:
+    name: ts6-net
+    driver: bridge

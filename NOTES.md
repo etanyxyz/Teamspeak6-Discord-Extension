@@ -152,10 +152,43 @@ CONSEQUENCE FOR THE BRIDGE (document in README, not hidden):
 - Known test gotcha: `stdout.write()` in the fake server must receive ONE
   concatenated string, not a tuple (a tuple silently kills the session).
 
+## Phase 5 — integration test vs live server (done)
+
+- `query_ip_allowlist` is a **file**, not an env var:
+  `/var/tsserver/query_ip_allowlist.txt` (in the `ts6-data` volume, persists).
+  Appended `172.18.0.0/16` (the ts6-net subnet) to it; host-side probes keep
+  working via the default loopback entries. Documented in README.
+- `Dockerfile` (python:3.12-slim, non-root `bridge` user, console script
+  `tsdiscord`) + `docker-compose.yml` (ts6 + bridge services, shared ts6-net,
+  `env_file: .env`; compose `environment` pins TS_HOST=ts6 so the container
+  always resolves the service name). Same dir → same project name → the
+  prod compose reuses the dev compose's `ts6-data` volume seamlessly
+  (stop dev compose, `docker compose up -d --build`).
+- LIVE TEST RESULTS (all passed):
+  - bridge container (172.18.0.3) authenticates over SSH to ts6 (172.18.0.2),
+    `query ready: own clid=N, channel='default channel'`.
+  - second query session (host probe) joining → `posted ClientJoined`.
+  - `sendtextmessage targetmode=3` → `posted TextMessage` (server chat).
+  - `sendtextmessage targetmode=2` (default channel) → `posted TextMessage`
+    (channel chat, the channel the bridge sits in).
+  - probe `quit` → `posted ClientLeft` (nickname/uid enriched from cache).
+  - `docker restart ts6` with bridge running: keepalive detects
+    "Channel not open for sending" → `reconnecting in 1s` → session open →
+    ready again (re-registered events, re-seeded client cache).
+  - All posts returned Discord 204 to the real webhook (user can verify the
+    messages in the channel).
+- BUG FOUND IN PRODUCTION: Discord rejects webhook payloads whose username
+  contains "discord" (case-insensitive, 400). `BRIDGE_USERNAME` was
+  "TS6 → Discord Bridge" → renamed to "TS6 → Bridge".
+- Added INFO log per successful post (`posted <Event> to Discord`) — needed
+  for verification, useful operationally.
+- Probe gotcha: asyncssh `ssh.close()` is sync (not awaitable).
+
 ## Open questions
 
-- (Phase 5) widen `query_ip_allowlist` (TSSERVER_QUERY_IP_ALLOWLIST) to
-  the ts6-net subnet before running the bridge as a container.
+- None blocking. Private-message visibility remains an unverified tooling
+  limitation (TS6 rejects privates sent by query clients) — documented in
+  README with FORWARD_PRIVATE_MESSAGES=false default.
 
 ## Phase status
 
@@ -164,5 +197,5 @@ CONSEQUENCE FOR THE BRIDGE (document in README, not hidden):
 - [x] Phase 2: Learn query API empirically
 - [x] Phase 3: Build the bridge
 - [x] Phase 4: Testing
-- [ ] Phase 5: Integration test vs live server
+- [x] Phase 5: Integration test vs live server
 - [ ] Phase 6: Packaging and docs

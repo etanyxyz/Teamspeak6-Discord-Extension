@@ -15,7 +15,9 @@ import re
 from . import parser
 
 ZWSP = "\u200b"
-BRIDGE_USERNAME = "TS6 \u2192 Discord Bridge"
+# Note: Discord rejects webhook usernames containing "discord" (case-
+# insensitive), so this must not mention Discord.
+BRIDGE_USERNAME = "TS6 \u2192 Bridge"
 
 _LIMIT_CONTENT = 2000
 _LIMIT_DESC = 4096
