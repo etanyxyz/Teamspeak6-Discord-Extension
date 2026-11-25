@@ -1,0 +1,147 @@
+# TS6 ServerQuery sample events (empirically captured)
+
+Captured 2026-11-25 from a sandboxed TeamSpeak 6 server 6.0.0-beta14
+(Docker image `teamspeaksystems/teamspeak6-server:6.0.0-beta14`) over the
+**SSH ServerQuery** interface (port 10022), using the built-in
+`serveradmin` query account. All samples are verbatim server output;
+no real user data is involved (the only clients in the sandbox were
+query sessions of the built-in `serveradmin` account — its uid is the
+literal string `serveradmin`, query sessions get suffixed nicknames
+`serveradmin1`, `serveradmin2`, ...).
+
+Line endings are CRLF and each response line is prefixed with `\r`
+(cr-terminated). Lines are space-separated `key=value` pairs; a response
+ends with an `error id=N msg=...` line; multi-record responses use `|`
+between records.
+
+## Connection banner
+
+    TS3
+    Welcome to the TeamSpeak ServerQuery interface, type "help" for a list of commands and "help <command>" for information on a specific command.
+
+## Basic commands
+
+> version
+
+    version=6.0.0-beta14 build=1794844729 platform=Linux
+    error id=0 msg=ok
+
+> whoami   (before `use`)
+
+    virtualserver_status=unknown virtualserver_unique_identifier virtualserver_port=0 virtualserver_id=0 client_id=0 client_channel_id=0 client_nickname client_database_id=1 client_login_name=serveradmin client_unique_identifier=serveradmin client_origin_server_id=0
+    error id=0 msg=ok
+
+> use sid=1
+
+    error id=0 msg=ok
+
+> whoami   (after `use sid=1`)
+
+    virtualserver_status=online virtualserver_id=1 virtualserver_unique_identifier=BtDrw9w6TNvScqrdQ3LWkIYNwMOQZbAlCw9GjUfK5OQ= virtualserver_uuid=455ead6c-3232-5a9c-8668-63ce1067172d virtualserver_port=9987 client_id=1 client_channel_id=1 client_nickname=serveradmin client_database_id=1 client_login_name=serveradmin client_unique_identifier=serveradmin client_origin_server_id=0
+    error id=0 msg=ok
+
+> clientlist -uid
+
+    clid=1 cid=1 client_database_id=1 client_nickname=serveradmin client_type=1 client_unique_identifier=serveradmin
+    error id=0 msg=ok
+
+> channellist
+
+    cid=1 pid=0 channel_order=0 channel_name=Default\sChannel total_clients=1 channel_needed_subscribe_power=0
+    error id=0 msg=ok
+
+Note: `channel_name` uses TS text escapes (`\s` = space, `\p` = tab,
+`\/` = slash, `\\` = backslash, `\n` = newline).
+
+## Events (after `servernotifyregister event=server|textserver|textchannel|textprivate`)
+
+### Client joined — `notifycliententerview`
+
+Full client record is delivered on join (uid, nickname, ...).
+`cfid` = previous channel id (0 = server entry), `ctid` = channel entered.
+
+    notifycliententerview cfid=0 ctid=1 reasonid=0 clid=7 client_unique_identifier=serveradmin client_nickname=serveradmin1 client_input_muted=0 client_output_muted=0 client_outputonly_muted=0 client_input_hardware=0 client_output_hardware=0 client_meta_data client_is_recording=0 client_is_streaming=0 client_database_id=1 client_channel_group_id=8 client_servergroups=2 client_away=0 client_away_message client_type=1 client_flag_avatar client_talk_power=0 client_talk_request=0 client_talk_request_msg client_description client_is_talker=0 client_is_priority_speaker=0 client_unread_messages=0 client_nickname_phonetic client_needed_serverquery_view_power=100 client_icon_id=0 client_is_channel_commander=0 client_country client_channel_group_inherited_channel_id=1 client_badges client_myteamspeak_id client_integrations client_myteamspeak_avatar client_signed_badges client_user_tag client_transport
+
+### Client left — `notifyclientleftview`
+
+**Only the `clid` is delivered** (plus `cfid` = channel left from,
+`ctid=0`, `reasonid`, `reasonmsg`). The bridge must keep a
+clid -> (nickname, uid) cache from `clientlist -uid` / join events,
+because the leave event cannot be enriched by the server.
+
+Observed reasonid values: 8 = "disconnecting" (normal quit).
+
+    notifyclientleftview cfid=4 ctid=0 reasonid=8 reasonmsg=disconnecting clid=10
+
+### Server text message — `notifytextmessage targetmode=3`
+
+`msg` is TS-escaped. Invoker identity: `invokerid` (clid),
+`invokername` (nickname), `invokeruid` (unique id). **No timestamp** is
+sent by the server — the bridge adds its own.
+
+    notifytextmessage targetmode=3 msg=hello\sserver\s@everyone invokerid=7 invokername=serveradmin1 invokeruid=serveradmin
+
+### Channel text message — `notifytextmessage targetmode=2`
+
+Same shape as server messages. **No channel id in the payload.**
+
+    notifytextmessage targetmode=2 msg=hello\sTestCh invokerid=7 invokername=serveradmin1 invokeruid=serveradmin
+
+## Error samples
+
+### Sending a private message as a query client is rejected
+
+TS6 refuses private messages sent by ServerQuery clients — this is why
+`notifytextmessage targetmode=1` could not be generated in the sandbox
+(no voice client available):
+
+> sendtextmessage targetmode=1 target=8 msg=psst\sprivate
+
+    error id=516 msg=invalid\sclient\stype
+
+### Command issued before selecting a virtual server
+
+> servernotifyregister event=server      (without prior `use sid=1`)
+
+    error id=1024 msg=invalid\sserverID
+
+## Empirically verified visibility matrix (query client in Default Channel)
+
+| TS event                          | Seen by query client?                        |
+|-----------------------------------|----------------------------------------------|
+| Client join (enter view)          | YES, server-wide (seen for client entering a channel other than the query client's) |
+| Client leave (leave view)         | YES, server-wide (seen for client leaving from another channel; clid only) |
+| Server text (targetmode=3)        | YES, server-wide                             |
+| Channel text (targetmode=2)       | ONLY the channel the query client itself is a member of |
+| Private text (targetmode=1)       | NOT TESTABLE: query clients cannot send privates (error 516); whether a query client receives privates addressed to itself is unknown |
+
+Details:
+- `servernotifyregister event=textchannel id={cid}` for a foreign channel
+  is ACCEPTED (error id=0) but delivers nothing for channels the query
+  client is not in — the notification "view" is strictly channel-scoped
+  per the query client's membership.
+- The Admin Server Query server group already carries
+  `i_client_serverquery_view_power=100`; the scoping is not a
+  permission gap.
+- `channelcreate` automatically moves the creating client into the new
+  channel (useful for tests; the bridge never creates channels).
+- No `ping` command exists; keepalive must be a periodic innocuous
+  command (the bridge sends `version`).
+- Flood protection: a burst of connect/auth attempts locks the source IP
+  out of the query interfaces for ~10 minutes (in-memory; cleared by
+  server restart). One steady connection with periodic keepalives is
+  fine.
+- `client_type=1` marks ServerQuery clients in `clientlist`/enter events.
+  The bridge identifies its own clients by nickname + `client_type=1`
+  (its own clid from `whoami`) and never forwards them.
+
+## WebQuery (HTTP) notes
+
+- Stateless command API: `GET http://host:10080/{command}?params` with
+  header `x-api-key: <key>` (key = `TS_QUERY_API_KEY` from first start).
+  Responses: `{"body":[...],"status":{"code":0,"message":"ok"}}`.
+- Guest access allows `version`/`whoami`; everything else needs the key.
+- `servernotifyregister` is NOT in the api-key scope
+  (`command not in api key scope`, code 5120) and there is no event
+  stream endpoint — **WebQuery cannot be used for events**. Hence the
+  bridge uses SSH ServerQuery.
